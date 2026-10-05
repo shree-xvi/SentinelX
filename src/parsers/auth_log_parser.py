@@ -1,3 +1,4 @@
+
 import re
 import ipaddress
 from pathlib import Path
@@ -26,72 +27,91 @@ def is_valid_ipv4(address):
         return False
 
 
+def parse_auth_line(line, line_number=None):
+    """
+    Parse one authentication log line.
+
+    Return an event dictionary for a valid login event, or None if the
+    line is unrelated or malformed.
+    """
+    if "Login failed" in line:
+        event_type = "failure"
+    elif "Login successful" in line:
+        event_type = "success"
+    else:
+        return None
+
+    timestamp_match = TIMESTAMP_PATTERN.search(line)
+    ip_match = IP_PATTERN.search(line)
+    username_match = USERNAME_PATTERN.search(line)
+
+    if not timestamp_match or not ip_match or not username_match:
+        location = (
+            f" on line {line_number}"
+            if line_number is not None
+            else ""
+        )
+        print(f"[WARNING] Skipping malformed log entry{location}.")
+        return None
+
+    try:
+        timestamp = datetime.strptime(
+            timestamp_match.group(1),
+            "%Y-%m-%d %H:%M:%S",
+        )
+    except ValueError:
+        location = (
+            f" on line {line_number}"
+            if line_number is not None
+            else ""
+        )
+        print(f"[WARNING] Invalid timestamp{location}.")
+        return None
+
+    source_ip = ip_match.group(1)
+    username = username_match.group(1)
+
+    if not is_valid_ipv4(source_ip):
+        location = (
+            f" on line {line_number}"
+            if line_number is not None
+            else ""
+        )
+        print(f"[WARNING] Invalid IP address{location}.")
+        return None
+
+    return {
+        "timestamp": timestamp,
+        "source_ip": source_ip,
+        "username": username,
+        "event_type": event_type,
+    }
+
+
 def parse_auth_logs(log_file):
     """
-    Parse successful and failed login events.
-
-    Each event contains timestamp, source_ip, username, and event_type.
+    Parse successful and failed login events from a log file.
     """
-    events = []
     log_file = Path(log_file)
 
     if not log_file.exists():
         raise FileNotFoundError(f"Log file not found: {log_file}")
 
+    events = []
+
     with log_file.open("r", encoding="utf-8") as file:
         for line_number, line in enumerate(file, start=1):
-            if "Login failed" in line:
-                event_type = "failure"
-            elif "Login successful" in line:
-                event_type = "success"
-            else:
-                continue
+            event = parse_auth_line(line, line_number)
 
-            timestamp_match = TIMESTAMP_PATTERN.search(line)
-            ip_match = IP_PATTERN.search(line)
-            username_match = USERNAME_PATTERN.search(line)
-
-            if not timestamp_match or not ip_match or not username_match:
-                print(
-                    f"[WARNING] Skipping malformed log entry "
-                    f"on line {line_number}."
-                )
-                continue
-
-            try:
-                timestamp = datetime.strptime(
-                    timestamp_match.group(1),
-                    "%Y-%m-%d %H:%M:%S",
-                )
-            except ValueError:
-                print(
-                    f"[WARNING] Invalid timestamp on line {line_number}."
-                )
-                continue
-
-            source_ip = ip_match.group(1)
-            username = username_match.group(1)
-
-            if not is_valid_ipv4(source_ip):
-                print(
-                    f"[WARNING] Invalid IP address on line {line_number}."
-                )
-                continue
-
-            events.append({
-                "timestamp": timestamp,
-                "source_ip": source_ip,
-                "username": username,
-                "event_type": event_type,
-            })
+            if event is not None:
+                events.append(event)
 
     return events
 
 
 def parse_failed_logins(log_file):
     """
-    Compatibility function for existing code and tests.
-    Returns failed login timestamps grouped by source IP.
+    Compatibility function returning failed timestamps grouped by IP.
     """
     failed_attempts = {}
 
