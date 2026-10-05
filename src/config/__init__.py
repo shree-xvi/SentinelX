@@ -1,0 +1,3 @@
+"""
+SentinelX configuration package.
+"""

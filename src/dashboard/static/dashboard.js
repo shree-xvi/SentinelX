@@ -6,8 +6,10 @@ const API_INVESTIGATION = "/api/investigation";
 
 let allAlerts = [];
 let selectedAlertId = null;
+
 let severityChart = null;
 let ruleChart = null;
+
 let refreshInProgress = false;
 
 const $ = (id) => document.getElementById(id);
@@ -87,6 +89,43 @@ function getInvestigation(item) {
 }
 
 
+function getRisk(item) {
+    const risk = item.risk ?? {};
+
+    let score = Number(risk.score);
+
+    if (!Number.isFinite(score)) {
+        score = 0;
+    }
+
+    score = Math.max(
+        0,
+        Math.min(
+            100,
+            Math.round(score)
+        )
+    );
+
+    let level = String(
+        risk.level ?? "LOW"
+    ).toUpperCase();
+
+    if (
+        level !== "LOW" &&
+        level !== "MEDIUM" &&
+        level !== "HIGH" &&
+        level !== "CRITICAL"
+    ) {
+        level = "LOW";
+    }
+
+    return {
+        score,
+        level
+    };
+}
+
+
 function normaliseStatus(status) {
     const value = String(
         status ?? "New"
@@ -104,7 +143,11 @@ function normaliseStatus(status) {
 }
 
 
-function showMessage(element, message, type = "") {
+function showMessage(
+    element,
+    message,
+    type = ""
+) {
     if (!element) {
         return;
     }
@@ -117,17 +160,24 @@ function showMessage(element, message, type = "") {
 }
 
 
-async function fetchJson(url, options = {}) {
-    const response = await fetch(url, {
-        cache: "no-store",
-        ...options
-    });
+async function fetchJson(
+    url,
+    options = {}
+) {
+    const response = await fetch(
+        url,
+        {
+            cache: "no-store",
+            ...options
+        }
+    );
 
     if (!response.ok) {
         let detail = "";
 
         try {
-            const body = await response.json();
+            const body =
+                await response.json();
 
             detail =
                 body.error ??
@@ -170,7 +220,8 @@ function updateMonitorStatus(data) {
         data.status ?? "UNKNOWN"
     ).toUpperCase();
 
-    $("monitorStatus").textContent = status;
+    $("monitorStatus").textContent =
+        status;
 
     $("monitorMessage").textContent =
         data.message ??
@@ -181,6 +232,10 @@ function updateMonitorStatus(data) {
         "monitorTag"
     ]) {
         const element = $(id);
+
+        if (!element) {
+            continue;
+        }
 
         element.classList.remove(
             "running",
@@ -224,6 +279,15 @@ function updateCharts(counts) {
 
     const ruleFallback =
         $("ruleChartFallback");
+
+    if (
+        !severityCanvas ||
+        !ruleCanvas ||
+        !severityFallback ||
+        !ruleFallback
+    ) {
+        return;
+    }
 
     if (typeof Chart === "undefined") {
         severityCanvas.hidden = true;
@@ -274,7 +338,6 @@ function updateCharts(counts) {
         }]
     };
 
-
     if (!severityChart) {
         severityChart = new Chart(
             severityCanvas,
@@ -308,7 +371,6 @@ function updateCharts(counts) {
         severityChart.update();
     }
 
-
     const ruleCounts = {};
 
     for (const item of allAlerts) {
@@ -319,14 +381,12 @@ function updateCharts(counts) {
             (ruleCounts[rule] ?? 0) + 1;
     }
 
-
     const sortedRules =
         Object.entries(ruleCounts)
             .sort(
                 (a, b) => b[1] - a[1]
             )
             .slice(0, 8);
-
 
     const ruleData = {
         labels: sortedRules.map(
@@ -344,7 +404,6 @@ function updateCharts(counts) {
             borderRadius: 5
         }]
     };
-
 
     if (!ruleChart) {
         ruleChart = new Chart(
@@ -412,6 +471,8 @@ function updateOverview() {
     let open = 0;
     let resolved = 0;
 
+    let criticalRisks = 0;
+    let totalRiskScore = 0;
 
     for (const item of allAlerts) {
         const alert =
@@ -425,8 +486,16 @@ function updateOverview() {
                 getInvestigation(item).status
             );
 
+        const risk =
+            getRisk(item);
+
         counts[severity]++;
 
+        totalRiskScore += risk.score;
+
+        if (risk.level === "CRITICAL") {
+            criticalRisks++;
+        }
 
         if (status === "Resolved") {
             resolved++;
@@ -435,6 +504,13 @@ function updateOverview() {
         }
     }
 
+    const averageRisk =
+        allAlerts.length > 0
+            ? Math.round(
+                totalRiskScore /
+                allAlerts.length
+            )
+            : 0;
 
     $("totalCount").textContent =
         allAlerts.length;
@@ -454,6 +530,11 @@ function updateOverview() {
     $("resolvedCount").textContent =
         resolved;
 
+    $("criticalCount").textContent =
+        criticalRisks;
+
+    $("averageRiskCount").textContent =
+        `${averageRisk} / 100`;
 
     updateCharts(counts);
 }
@@ -478,9 +559,59 @@ function makeCell(
 }
 
 
+function ensureRiskTableHeaders() {
+    const tbody = $("alertRows");
+
+    if (!tbody) {
+        return;
+    }
+
+    const table =
+        tbody.closest("table");
+
+    if (!table) {
+        return;
+    }
+
+    const headerRow =
+        table.querySelector("thead tr");
+
+    if (!headerRow) {
+        return;
+    }
+
+    headerRow.replaceChildren();
+
+    const headers = [
+        "Severity",
+        "Risk Score",
+        "Risk Level",
+        "Detection Rule",
+        "Source IP",
+        "Timestamp",
+        "Investigation"
+    ];
+
+    for (const header of headers) {
+        const cell =
+            document.createElement("th");
+
+        cell.textContent = header;
+
+        headerRow.appendChild(cell);
+    }
+}
+
+
 function renderAlerts() {
     const tbody =
         $("alertRows");
+
+    if (!tbody) {
+        return;
+    }
+
+    ensureRiskTableHeaders();
 
     const query =
         $("searchInput")
@@ -498,9 +629,7 @@ function renderAlerts() {
             .value
             .toLowerCase();
 
-
     tbody.replaceChildren();
-
 
     const filtered =
         allAlerts.filter((item) => {
@@ -509,6 +638,9 @@ function renderAlerts() {
 
             const investigation =
                 getInvestigation(item);
+
+            const risk =
+                getRisk(item);
 
             const severity =
                 getSeverity(alert)
@@ -519,14 +651,12 @@ function renderAlerts() {
                     investigation.status
                 ).toLowerCase();
 
-
             if (
                 severityFilter !== "all" &&
                 severity !== severityFilter
             ) {
                 return false;
             }
-
 
             if (
                 statusFilter !== "all" &&
@@ -535,10 +665,10 @@ function renderAlerts() {
                 return false;
             }
 
-
             if (query) {
                 const searchable = [
                     JSON.stringify(alert),
+                    JSON.stringify(risk),
                     investigation.notes ?? "",
                     investigation.status ?? ""
                 ]
@@ -552,15 +682,12 @@ function renderAlerts() {
                 }
             }
 
-
             return true;
         });
-
 
     $("resultCount").textContent =
         `${filtered.length} of ` +
         `${allAlerts.length} alerts`;
-
 
     if (filtered.length === 0) {
         const row =
@@ -569,7 +696,8 @@ function renderAlerts() {
         const cell =
             document.createElement("td");
 
-        cell.colSpan = 5;
+        cell.colSpan = 7;
+
         cell.className =
             "empty-state";
 
@@ -585,7 +713,6 @@ function renderAlerts() {
         return;
     }
 
-
     for (const item of filtered) {
         const alert =
             item.data ?? {};
@@ -596,11 +723,13 @@ function renderAlerts() {
         const severity =
             getSeverity(alert);
 
+        const risk =
+            getRisk(item);
+
         const status =
             normaliseStatus(
                 investigation.status
             );
-
 
         const row =
             document.createElement("tr");
@@ -617,7 +746,7 @@ function renderAlerts() {
             `Investigate ${getRule(alert)}`
         );
 
-
+        // Severity
         const severityCell =
             makeCell("");
 
@@ -638,21 +767,63 @@ function renderAlerts() {
             severityCell
         );
 
+        // Risk Score
+        const riskScoreCell =
+            makeCell("");
 
+        const riskScoreBadge =
+            document.createElement("span");
+
+        riskScoreBadge.className =
+            "risk-score-badge";
+
+        riskScoreBadge.textContent =
+            `${risk.score} / 100`;
+
+        riskScoreCell.appendChild(
+            riskScoreBadge
+        );
+
+        row.appendChild(
+            riskScoreCell
+        );
+
+        // Risk Level
+        const riskLevelCell =
+            makeCell("");
+
+        const riskLevelBadge =
+            document.createElement("span");
+
+        riskLevelBadge.className =
+            `risk-badge ${risk.level.toLowerCase()}`;
+
+        riskLevelBadge.textContent =
+            risk.level;
+
+        riskLevelCell.appendChild(
+            riskLevelBadge
+        );
+
+        row.appendChild(
+            riskLevelCell
+        );
+
+        // Detection Rule
         row.appendChild(
             makeCell(
                 getRule(alert)
             )
         );
 
-
+        // Source IP
         row.appendChild(
             makeCell(
                 getSourceIp(alert)
             )
         );
 
-
+        // Timestamp
         row.appendChild(
             makeCell(
                 formatDate(
@@ -661,7 +832,7 @@ function renderAlerts() {
             )
         );
 
-
+        // Investigation
         const statusCell =
             makeCell("");
 
@@ -682,12 +853,10 @@ function renderAlerts() {
             statusCell
         );
 
-
         row.addEventListener(
             "click",
             () => openAlert(item)
         );
-
 
         row.addEventListener(
             "keydown",
@@ -697,11 +866,11 @@ function renderAlerts() {
                     event.key === " "
                 ) {
                     event.preventDefault();
+
                     openAlert(item);
                 }
             }
         );
-
 
         tbody.appendChild(row);
     }
@@ -719,7 +888,6 @@ function addDetail(
     wrapper.className =
         "detail";
 
-
     const heading =
         document.createElement("div");
 
@@ -728,7 +896,6 @@ function addDetail(
 
     heading.textContent =
         label;
-
 
     const content =
         document.createElement("div");
@@ -741,7 +908,6 @@ function addDetail(
             value ??
             "Not available"
         );
-
 
     wrapper.append(
         heading,
@@ -764,8 +930,11 @@ function renderInvestigationHistory(
     const container =
         $("investigationHistory");
 
-    container.replaceChildren();
+    if (!container) {
+        return;
+    }
 
+    container.replaceChildren();
 
     const history =
         Array.isArray(
@@ -773,7 +942,6 @@ function renderInvestigationHistory(
         )
             ? investigation.history
             : [];
-
 
     if (history.length === 0) {
         const empty =
@@ -792,13 +960,11 @@ function renderInvestigationHistory(
         return;
     }
 
-
     /*
      * Display newest events first.
      */
     const orderedHistory =
         [...history].reverse();
-
 
     for (
         const event
@@ -810,13 +976,11 @@ function renderInvestigationHistory(
         entry.className =
             "history-entry";
 
-
         const marker =
             document.createElement("div");
 
         marker.className =
             "history-marker";
-
 
         const content =
             document.createElement("div");
@@ -824,13 +988,11 @@ function renderInvestigationHistory(
         content.className =
             "history-content";
 
-
         const header =
             document.createElement("div");
 
         header.className =
             "history-header";
-
 
         const action =
             document.createElement("strong");
@@ -838,7 +1000,6 @@ function renderInvestigationHistory(
         action.textContent =
             event.action ??
             "Investigation updated";
-
 
         const timestamp =
             document.createElement("time");
@@ -848,19 +1009,16 @@ function renderInvestigationHistory(
                 event.timestamp
             );
 
-
         header.append(
             action,
             timestamp
         );
-
 
         const transition =
             document.createElement("div");
 
         transition.className =
             "history-transition";
-
 
         const previousStatus =
             event.previous_status ??
@@ -869,7 +1027,6 @@ function renderInvestigationHistory(
         const newStatus =
             event.status ??
             "New";
-
 
         const previous =
             document.createElement("span");
@@ -882,7 +1039,6 @@ function renderInvestigationHistory(
         previous.textContent =
             previousStatus;
 
-
         const arrow =
             document.createElement("span");
 
@@ -891,7 +1047,6 @@ function renderInvestigationHistory(
 
         arrow.textContent =
             "→";
-
 
         const current =
             document.createElement("span");
@@ -904,19 +1059,16 @@ function renderInvestigationHistory(
         current.textContent =
             newStatus;
 
-
         transition.append(
             previous,
             arrow,
             current
         );
 
-
         content.append(
             header,
             transition
         );
-
 
         if (
             typeof event.notes === "string" &&
@@ -936,12 +1088,10 @@ function renderInvestigationHistory(
             );
         }
 
-
         entry.append(
             marker,
             content
         );
-
 
         container.appendChild(
             entry
@@ -954,23 +1104,22 @@ function openAlert(item) {
     selectedAlertId =
         item.id;
 
-
     const alert =
         item.data ?? {};
+
+    const risk =
+        getRisk(item);
 
     const investigation =
         getInvestigation(item);
 
-
     $("modalTitle").textContent =
         getRule(alert);
-
 
     const summary =
         $("alertSummary");
 
     summary.replaceChildren();
-
 
     addDetail(
         summary,
@@ -978,6 +1127,17 @@ function openAlert(item) {
         getSeverity(alert)
     );
 
+    addDetail(
+        summary,
+        "Risk Score",
+        `${risk.score} / 100`
+    );
+
+    addDetail(
+        summary,
+        "Risk Level",
+        risk.level
+    );
 
     addDetail(
         summary,
@@ -985,13 +1145,11 @@ function openAlert(item) {
         getRule(alert)
     );
 
-
     addDetail(
         summary,
         "Source IP",
         getSourceIp(alert)
     );
-
 
     addDetail(
         summary,
@@ -1001,7 +1159,6 @@ function openAlert(item) {
         )
     );
 
-
     addDetail(
         summary,
         "Investigation status",
@@ -1009,7 +1166,6 @@ function openAlert(item) {
             investigation.status
         )
     );
-
 
     addDetail(
         summary,
@@ -1021,42 +1177,37 @@ function openAlert(item) {
             : "Not updated"
     );
 
-
     $("evidence").textContent =
         JSON.stringify(
-            alert,
+            {
+                alert,
+                risk
+            },
             null,
             2
         );
 
-
     renderInvestigationHistory(
         investigation
     );
-
 
     $("investigationStatus").value =
         normaliseStatus(
             investigation.status
         );
 
-
     $("investigationNotes").value =
         investigation.notes ?? "";
 
-
     updateNotesCount();
-
 
     showMessage(
         $("modalMessage"),
         ""
     );
 
-
     $("modalBackdrop").hidden =
         false;
-
 
     $("closeModal").focus();
 }
@@ -1084,13 +1235,11 @@ async function refreshAlerts() {
 
     refreshInProgress = true;
 
-
     try {
         const payload =
             await fetchJson(
                 API_ALERTS
             );
-
 
         allAlerts =
             Array.isArray(
@@ -1099,10 +1248,8 @@ async function refreshAlerts() {
                 ? payload.alerts
                 : [];
 
-
         updateOverview();
         renderAlerts();
-
 
         if (
             selectedAlertId &&
@@ -1115,7 +1262,6 @@ async function refreshAlerts() {
                         selectedAlertId
                 );
 
-
             if (item) {
                 const notes =
                     $("investigationNotes")
@@ -1125,9 +1271,7 @@ async function refreshAlerts() {
                     $("investigationStatus")
                         .value;
 
-
                 openAlert(item);
-
 
                 /*
                  * Keep unsaved edits intact
@@ -1145,7 +1289,6 @@ async function refreshAlerts() {
                 closeAlertModal();
             }
         }
-
 
         showMessage(
             $("pageMessage"),
@@ -1198,19 +1341,16 @@ async function saveInvestigation() {
         return;
     }
 
-
     const saveButton =
         $("saveInvestigation");
 
     saveButton.disabled =
         true;
 
-
     showMessage(
         $("modalMessage"),
         "Saving investigation..."
     );
-
 
     try {
         await fetchJson(
@@ -1238,16 +1378,13 @@ async function saveInvestigation() {
             }
         );
 
-
         await refreshAlerts();
-
 
         showMessage(
             $("modalMessage"),
             "Investigation saved successfully.",
             "success"
         );
-
 
     } catch (error) {
         showMessage(
@@ -1273,13 +1410,11 @@ function resetFilters() {
     $("statusFilter").value =
         "all";
 
-
     renderAlerts();
 }
 
 
 function initialiseDashboard() {
-
     $("refreshButton")
         .addEventListener(
             "click",
@@ -1291,13 +1426,11 @@ function initialiseDashboard() {
             }
         );
 
-
     $("searchInput")
         .addEventListener(
             "input",
             renderAlerts
         );
-
 
     $("severityFilter")
         .addEventListener(
@@ -1305,13 +1438,11 @@ function initialiseDashboard() {
             renderAlerts
         );
 
-
     $("statusFilter")
         .addEventListener(
             "change",
             renderAlerts
         );
-
 
     $("resetFilters")
         .addEventListener(
@@ -1319,20 +1450,17 @@ function initialiseDashboard() {
             resetFilters
         );
 
-
     $("closeModal")
         .addEventListener(
             "click",
             closeAlertModal
         );
 
-
     $("saveInvestigation")
         .addEventListener(
             "click",
             saveInvestigation
         );
-
 
     $("markInvestigating")
         .addEventListener(
@@ -1347,7 +1475,6 @@ function initialiseDashboard() {
             }
         );
 
-
     $("markResolved")
         .addEventListener(
             "click",
@@ -1361,13 +1488,11 @@ function initialiseDashboard() {
             }
         );
 
-
     $("investigationNotes")
         .addEventListener(
             "input",
             updateNotesCount
         );
-
 
     $("modalBackdrop")
         .addEventListener(
@@ -1382,7 +1507,6 @@ function initialiseDashboard() {
             }
         );
 
-
     document.addEventListener(
         "keydown",
         (event) => {
@@ -1395,16 +1519,13 @@ function initialiseDashboard() {
         }
     );
 
-
     refreshAlerts();
     refreshStatus();
-
 
     window.setInterval(
         refreshAlerts,
         5000
     );
-
 
     window.setInterval(
         refreshStatus,

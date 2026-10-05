@@ -1,0 +1,22 @@
+{
+    "detection": {
+        "brute_force": {
+            "threshold": 5,
+            "window_minutes": 5
+        }
+    },
+    "risk": {
+        "medium_threshold": 30,
+        "high_threshold": 60,
+        "critical_threshold": 80
+    },
+    "monitor": {
+        "poll_seconds": 1,
+        "max_watch_events": 1000
+    },
+    "dashboard": {
+        "host": "127.0.0.1",
+        "port": 8080,
+        "heartbeat_timeout_seconds": 10
+    }
+}

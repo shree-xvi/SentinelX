@@ -1,9 +1,20 @@
 import hashlib
 import json
+import sys
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlparse
+
+
+# Add the src directory to Python's import path.
+SRC_DIR = Path(__file__).resolve().parents[1]
+
+if str(SRC_DIR) not in sys.path:
+    sys.path.insert(0, str(SRC_DIR))
+
+
+from detection.risk_score import calculate_risk
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -20,7 +31,11 @@ PORT = 8080
 
 HEARTBEAT_TIMEOUT_SECONDS = 10
 
-VALID_STATUSES = {"New", "Investigating", "Resolved"}
+VALID_STATUSES = {
+    "New",
+    "Investigating",
+    "Resolved",
+}
 
 MAX_NOTES_LENGTH = 5000
 MAX_REQUEST_BYTES = 10000
@@ -48,7 +63,10 @@ def load_alerts():
 
 
 def load_investigations():
-    data = load_json_file(INVESTIGATIONS_FILE, {})
+    data = load_json_file(
+        INVESTIGATIONS_FILE,
+        {},
+    )
 
     return data if isinstance(data, dict) else {}
 
@@ -61,7 +79,10 @@ def save_investigations(records):
 
     temporary_file = INVESTIGATIONS_FILE.with_suffix(".tmp")
 
-    with temporary_file.open("w", encoding="utf-8") as file:
+    with temporary_file.open(
+        "w",
+        encoding="utf-8",
+    ) as file:
         json.dump(
             records,
             file,
@@ -129,25 +150,27 @@ def investigation_for(alert, records):
         if not isinstance(event, dict):
             continue
 
-        clean_history.append({
-            "timestamp": event.get(
-                "timestamp"
-            ),
-            "previous_status": event.get(
-                "previous_status"
-            ),
-            "status": event.get(
-                "status"
-            ),
-            "notes": event.get(
-                "notes",
-                "",
-            ),
-            "action": event.get(
-                "action",
-                "Investigation updated",
-            ),
-        })
+        clean_history.append(
+            {
+                "timestamp": event.get(
+                    "timestamp"
+                ),
+                "previous_status": event.get(
+                    "previous_status"
+                ),
+                "status": event.get(
+                    "status"
+                ),
+                "notes": event.get(
+                    "notes",
+                    "",
+                ),
+                "action": event.get(
+                    "action",
+                    "Investigation updated",
+                ),
+            }
+        )
 
     return {
         "status": status,
@@ -160,17 +183,24 @@ def investigation_for(alert, records):
 def get_alert_payload():
     records = load_investigations()
 
-    return [
-        {
-            "id": alert_id(alert),
-            "data": alert,
-            "investigation": investigation_for(
-                alert,
-                records,
-            ),
-        }
-        for alert in load_alerts()
-    ]
+    payload = []
+
+    for alert in load_alerts():
+        risk = calculate_risk(alert)
+
+        payload.append(
+            {
+                "id": alert_id(alert),
+                "data": alert,
+                "risk": risk,
+                "investigation": investigation_for(
+                    alert,
+                    records,
+                ),
+            }
+        )
+
+    return payload
 
 
 def get_monitor_status():
@@ -337,6 +367,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 TEMPLATES_DIR / "index.html",
                 "text/html; charset=utf-8",
             )
+
             return
 
         if path == "/static/style.css":
@@ -345,6 +376,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 STATIC_DIR / "style.css",
                 "text/css; charset=utf-8",
             )
+
             return
 
         if path == "/static/dashboard.js":
@@ -353,6 +385,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 STATIC_DIR / "dashboard.js",
                 "text/javascript; charset=utf-8",
             )
+
             return
 
         if path == "/api/alerts":
@@ -362,6 +395,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
                     "alerts": get_alert_payload()
                 },
             )
+
             return
 
         if path == "/api/status":
@@ -369,6 +403,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 self,
                 get_monitor_status(),
             )
+
             return
 
         send_json(
@@ -388,6 +423,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 {"error": "Not found"},
                 404,
             )
+
             return
 
         try:
@@ -404,6 +440,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 {"error": "Invalid content length"},
                 400,
             )
+
             return
 
         if (
@@ -420,6 +457,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 },
                 413,
             )
+
             return
 
         try:
@@ -445,6 +483,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 },
                 400,
             )
+
             return
 
         if not isinstance(payload, dict):
@@ -458,10 +497,13 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 },
                 400,
             )
+
             return
 
         requested_id = payload.get("id")
+
         status = payload.get("status")
+
         notes = payload.get(
             "notes",
             "",
@@ -484,6 +526,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 },
                 400,
             )
+
             return
 
         if (
@@ -501,6 +544,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 },
                 400,
             )
+
             return
 
         if (
@@ -518,6 +562,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 },
                 400,
             )
+
             return
 
         alerts = load_alerts()
@@ -544,6 +589,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 },
                 404,
             )
+
             return
 
         records = load_investigations()
@@ -649,6 +695,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 },
                 500,
             )
+
             return
 
         send_json(

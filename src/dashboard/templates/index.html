@@ -209,6 +209,42 @@
 
                 </article>
 
+
+                <!-- RISK INTELLIGENCE -->
+
+                <article class="stat-card stat-high">
+
+                    <p>Critical risks</p>
+
+                    <div
+                        class="stat-value"
+                        id="criticalCount">
+                        0
+                    </div>
+
+                    <span class="stat-foot">
+                        Alerts requiring highest attention
+                    </span>
+
+                </article>
+
+
+                <article class="stat-card stat-open">
+
+                    <p>Average risk score</p>
+
+                    <div
+                        class="stat-value"
+                        id="averageRiskCount">
+                        0
+                    </div>
+
+                    <span class="stat-foot">
+                        Average score across all alerts
+                    </span>
+
+                </article>
+
             </div>
 
         </section>
@@ -439,6 +475,14 @@
                                 </th>
 
                                 <th>
+                                    Risk Score
+                                </th>
+
+                                <th>
+                                    Risk Level
+                                </th>
+
+                                <th>
                                     Detection rule
                                 </th>
 
@@ -458,12 +502,13 @@
 
                         </thead>
 
+
                         <tbody id="alertRows">
 
                             <tr>
 
                                 <td
-                                    colspan="5"
+                                    colspan="7"
                                     class="empty-state">
                                     Loading alerts...
                                 </td>
@@ -667,8 +712,7 @@
                     id="investigationNotes"
                     maxlength="5000"
                     rows="6"
-                    placeholder="Document findings, actions taken, and recommended next steps...">
-                </textarea>
+                    placeholder="Document findings, actions taken, and recommended next steps..."></textarea>
 
 
                 <div class="textarea-footer">
