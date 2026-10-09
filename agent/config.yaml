@@ -1,0 +1,28 @@
+server:
+  url: "http://127.0.0.1:8000"
+  api_key: "snx_live_change_me"
+  timeout_seconds: 10
+
+shipping:
+  batch_size: 50
+  flush_interval_seconds: 5
+  max_queue_size: 1000
+
+collectors:
+  auth:
+    enabled: true
+    log_path: "Logs/auth.log"
+  file:
+    enabled: true
+    monitored_paths: []
+    poll_interval_seconds: 2
+  usb:
+    enabled: true
+    poll_interval_seconds: 5
+  process:
+    enabled: true
+    poll_interval_seconds: 5
+  network:
+    enabled: true
+    poll_interval_seconds: 5
+
