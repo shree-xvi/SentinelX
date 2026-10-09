@@ -1,11 +1,12 @@
 """
 SentinelX configuration loader.
 
-Loads configuration from the project-level config/sentinelx.json file
-and provides safe access to configuration values.
+Loads project configuration, validates settings, and falls back
+to safe defaults when configuration values are missing or invalid.
 """
 
 import json
+from copy import deepcopy
 from pathlib import Path
 
 
@@ -38,64 +39,142 @@ DEFAULT_CONFIG = {
 
 
 def _merge_config(default, loaded):
-    """
-    Recursively merge loaded configuration into the defaults.
-
-    Missing configuration values automatically fall back to defaults.
-    """
+    """Merge loaded settings into defaults without losing missing keys."""
 
     if not isinstance(default, dict):
         return loaded
 
     if not isinstance(loaded, dict):
-        return default.copy()
+        return deepcopy(default)
 
-    merged = default.copy()
+    merged = deepcopy(default)
 
     for key, value in loaded.items():
-        if (
-            key in merged
-            and isinstance(merged[key], dict)
-            and isinstance(value, dict)
-        ):
-            merged[key] = _merge_config(merged[key], value)
+        if key not in merged:
+            continue
+
+        if isinstance(merged[key], dict):
+            if isinstance(value, dict):
+                merged[key] = _merge_config(merged[key], value)
         else:
             merged[key] = value
 
     return merged
 
 
+def _is_integer(value):
+    """Return True for integers, excluding booleans."""
+
+    return isinstance(value, int) and not isinstance(value, bool)
+
+
+def _validated_integer(config, section, key, minimum, maximum=None):
+    """Validate an integer setting and restore its default if invalid."""
+
+    value = config[section][key]
+    default = DEFAULT_CONFIG[section][key]
+
+    valid = _is_integer(value) and value >= minimum
+
+    if maximum is not None:
+        valid = valid and value <= maximum
+
+    if not valid:
+        config[section][key] = default
+
+
+def _validate_config(config):
+    """Validate all supported configuration settings."""
+
+    detection = config["detection"]["brute_force"]
+
+    for key, minimum in (
+        ("threshold", 1),
+        ("window_minutes", 1),
+    ):
+        value = detection[key]
+        default = DEFAULT_CONFIG["detection"]["brute_force"][key]
+
+        if not _is_integer(value) or value < minimum:
+            detection[key] = default
+
+    risk = config["risk"]
+
+    risk_keys = (
+        "medium_threshold",
+        "high_threshold",
+        "critical_threshold",
+    )
+
+    for key in risk_keys:
+        value = risk[key]
+
+        if not _is_integer(value) or not 0 <= value <= 100:
+            risk[key] = DEFAULT_CONFIG["risk"][key]
+
+    if not (
+        risk["medium_threshold"]
+        < risk["high_threshold"]
+        < risk["critical_threshold"]
+    ):
+        config["risk"] = deepcopy(DEFAULT_CONFIG["risk"])
+
+    _validated_integer(
+        config, "monitor", "poll_seconds", minimum=1, maximum=60
+    )
+    _validated_integer(
+        config, "monitor", "max_watch_events", minimum=1, maximum=100000
+    )
+    _validated_integer(
+        config,
+        "dashboard",
+        "port",
+        minimum=1,
+        maximum=65535,
+    )
+    _validated_integer(
+        config,
+        "dashboard",
+        "heartbeat_timeout_seconds",
+        minimum=1,
+        maximum=3600,
+    )
+
+    host = config["dashboard"]["host"]
+
+    if not isinstance(host, str) or not host.strip():
+        config["dashboard"]["host"] = DEFAULT_CONFIG["dashboard"]["host"]
+
+    return config
+
+
 def load_config():
     """
-    Load SentinelX configuration.
+    Load and validate configuration.
 
-    If the configuration file does not exist or contains invalid JSON,
-    the default configuration is returned.
+    Missing files, invalid JSON, and unsupported root structures
+    fall back to defaults.
     """
 
     if not CONFIG_FILE.exists():
-        return DEFAULT_CONFIG.copy()
+        return deepcopy(DEFAULT_CONFIG)
 
     try:
         with CONFIG_FILE.open("r", encoding="utf-8") as file:
             loaded_config = json.load(file)
     except (OSError, json.JSONDecodeError):
-        return DEFAULT_CONFIG.copy()
+        return deepcopy(DEFAULT_CONFIG)
 
     if not isinstance(loaded_config, dict):
-        return DEFAULT_CONFIG.copy()
+        return deepcopy(DEFAULT_CONFIG)
 
-    return _merge_config(DEFAULT_CONFIG, loaded_config)
+    config = _merge_config(DEFAULT_CONFIG, loaded_config)
+
+    return _validate_config(config)
 
 
 def get_config_value(*keys):
-    """
-    Retrieve a nested configuration value.
-
-    Example:
-
-        get_config_value("detection", "brute_force", "threshold")
-    """
+    """Return a nested configuration value, or None if absent."""
 
     config = load_config()
 
@@ -109,32 +188,24 @@ def get_config_value(*keys):
 
 
 def get_brute_force_config():
-    """
-    Return brute-force detection configuration.
-    """
+    """Return brute-force detection settings."""
 
     return get_config_value("detection", "brute_force")
 
 
 def get_risk_config():
-    """
-    Return risk scoring configuration.
-    """
+    """Return risk scoring settings."""
 
     return get_config_value("risk")
 
 
 def get_monitor_config():
-    """
-    Return monitor configuration.
-    """
+    """Return monitoring settings."""
 
     return get_config_value("monitor")
 
 
 def get_dashboard_config():
-    """
-    Return dashboard configuration.
-    """
+    """Return dashboard settings."""
 
     return get_config_value("dashboard")

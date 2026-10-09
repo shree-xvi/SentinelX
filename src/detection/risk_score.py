@@ -3,7 +3,12 @@ SentinelX risk scoring engine.
 
 Converts alert evidence into a 0-100 risk score
 and assigns a corresponding risk level.
+
+Risk level thresholds are loaded from the
+project configuration file.
 """
+
+from config.config_loader import get_risk_config
 
 
 VALID_RISK_LEVELS = {
@@ -12,6 +17,11 @@ VALID_RISK_LEVELS = {
     "HIGH",
     "CRITICAL",
 }
+
+
+DEFAULT_MEDIUM_THRESHOLD = 30
+DEFAULT_HIGH_THRESHOLD = 60
+DEFAULT_CRITICAL_THRESHOLD = 80
 
 
 def calculate_risk_score(alert):
@@ -114,6 +124,8 @@ def calculate_risk_score(alert):
 def get_risk_level(score):
     """
     Convert a numerical risk score into a risk level.
+
+    Thresholds are loaded from config/sentinelx.json.
     """
 
     try:
@@ -121,13 +133,45 @@ def get_risk_level(score):
     except (TypeError, ValueError):
         return "LOW"
 
-    if score >= 80:
+    config = get_risk_config()
+
+    medium_threshold = config.get(
+        "medium_threshold",
+        DEFAULT_MEDIUM_THRESHOLD,
+    )
+
+    high_threshold = config.get(
+        "high_threshold",
+        DEFAULT_HIGH_THRESHOLD,
+    )
+
+    critical_threshold = config.get(
+        "critical_threshold",
+        DEFAULT_CRITICAL_THRESHOLD,
+    )
+
+    try:
+        medium_threshold = int(medium_threshold)
+    except (TypeError, ValueError):
+        medium_threshold = DEFAULT_MEDIUM_THRESHOLD
+
+    try:
+        high_threshold = int(high_threshold)
+    except (TypeError, ValueError):
+        high_threshold = DEFAULT_HIGH_THRESHOLD
+
+    try:
+        critical_threshold = int(critical_threshold)
+    except (TypeError, ValueError):
+        critical_threshold = DEFAULT_CRITICAL_THRESHOLD
+
+    if score >= critical_threshold:
         return "CRITICAL"
 
-    if score >= 60:
+    if score >= high_threshold:
         return "HIGH"
 
-    if score >= 30:
+    if score >= medium_threshold:
         return "MEDIUM"
 
     return "LOW"

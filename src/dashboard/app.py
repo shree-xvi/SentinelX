@@ -1,3 +1,15 @@
+"""
+SentinelX dashboard server.
+
+Provides:
+- Security alert API
+- Risk information
+- Monitor status API
+- Investigation workflow
+- Investigation audit trail
+- Static dashboard files
+"""
+
 import hashlib
 import json
 import sys
@@ -14,22 +26,26 @@ if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
 
+from config.config_loader import get_dashboard_config
 from detection.risk_score import calculate_risk
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 DASHBOARD_DIR = Path(__file__).resolve().parent
+
 TEMPLATES_DIR = DASHBOARD_DIR / "templates"
 STATIC_DIR = DASHBOARD_DIR / "static"
 
 ALERTS_FILE = PROJECT_ROOT / "Logs" / "alerts.json"
 STATUS_FILE = DASHBOARD_DIR / "status.json"
-INVESTIGATIONS_FILE = PROJECT_ROOT / "Logs" / "alert_investigations.json"
+INVESTIGATIONS_FILE = (
+    PROJECT_ROOT / "Logs" / "alert_investigations.json"
+)
 
-HOST = "127.0.0.1"
-PORT = 8080
 
-HEARTBEAT_TIMEOUT_SECONDS = 10
+DEFAULT_HOST = "127.0.0.1"
+DEFAULT_PORT = 8080
+DEFAULT_HEARTBEAT_TIMEOUT_SECONDS = 10
 
 VALID_STATUSES = {
     "New",
@@ -41,16 +57,82 @@ MAX_NOTES_LENGTH = 5000
 MAX_REQUEST_BYTES = 10000
 
 
+def get_dashboard_settings():
+    """
+    Load dashboard settings from the project configuration.
+
+    Falls back to safe defaults when configuration values are
+    missing or invalid.
+    """
+
+    config = get_dashboard_config()
+
+    host = config.get(
+        "host",
+        DEFAULT_HOST,
+    )
+
+    port = config.get(
+        "port",
+        DEFAULT_PORT,
+    )
+
+    heartbeat_timeout_seconds = config.get(
+        "heartbeat_timeout_seconds",
+        DEFAULT_HEARTBEAT_TIMEOUT_SECONDS,
+    )
+
+    if not isinstance(host, str) or not host.strip():
+        host = DEFAULT_HOST
+
+    try:
+        port = int(port)
+    except (TypeError, ValueError):
+        port = DEFAULT_PORT
+
+    try:
+        heartbeat_timeout_seconds = float(
+            heartbeat_timeout_seconds
+        )
+    except (TypeError, ValueError):
+        heartbeat_timeout_seconds = (
+            DEFAULT_HEARTBEAT_TIMEOUT_SECONDS
+        )
+
+    if not (1 <= port <= 65535):
+        port = DEFAULT_PORT
+
+    if heartbeat_timeout_seconds <= 0:
+        heartbeat_timeout_seconds = (
+            DEFAULT_HEARTBEAT_TIMEOUT_SECONDS
+        )
+
+    return {
+        "host": host,
+        "port": port,
+        "heartbeat_timeout_seconds": (
+            heartbeat_timeout_seconds
+        ),
+    }
+
+
 def load_json_file(path, default):
     try:
-        with path.open("r", encoding="utf-8") as file:
+        with path.open(
+            "r",
+            encoding="utf-8",
+        ) as file:
             return json.load(file)
+
     except (OSError, json.JSONDecodeError):
         return default
 
 
 def load_alerts():
-    data = load_json_file(ALERTS_FILE, [])
+    data = load_json_file(
+        ALERTS_FILE,
+        [],
+    )
 
     if not isinstance(data, list):
         return []
@@ -77,7 +159,9 @@ def save_investigations(records):
         exist_ok=True,
     )
 
-    temporary_file = INVESTIGATIONS_FILE.with_suffix(".tmp")
+    temporary_file = (
+        INVESTIGATIONS_FILE.with_suffix(".tmp")
+    )
 
     with temporary_file.open(
         "w",
@@ -90,7 +174,9 @@ def save_investigations(records):
             ensure_ascii=False,
         )
 
-    temporary_file.replace(INVESTIGATIONS_FILE)
+    temporary_file.replace(
+        INVESTIGATIONS_FILE
+    )
 
 
 def alert_id(alert):
@@ -258,7 +344,11 @@ def get_monitor_status():
     except (ValueError, TypeError):
         return stopped
 
-    if age < -5 or age > HEARTBEAT_TIMEOUT_SECONDS:
+    heartbeat_timeout = get_dashboard_settings()[
+        "heartbeat_timeout_seconds"
+    ]
+
+    if age < -5 or age > heartbeat_timeout:
         return {
             "status": "STOPPED",
             "message": "Monitoring heartbeat expired.",
@@ -500,9 +590,13 @@ class DashboardHandler(BaseHTTPRequestHandler):
 
             return
 
-        requested_id = payload.get("id")
+        requested_id = payload.get(
+            "id"
+        )
 
-        status = payload.get("status")
+        status = payload.get(
+            "status"
+        )
 
         notes = payload.get(
             "notes",
@@ -720,14 +814,19 @@ class DashboardHandler(BaseHTTPRequestHandler):
 
 
 def main():
+    dashboard_config = get_dashboard_settings()
+
+    host = dashboard_config["host"]
+    port = dashboard_config["port"]
+
     server = ThreadingHTTPServer(
-        (HOST, PORT),
+        (host, port),
         DashboardHandler,
     )
 
     print(
         "SentinelX dashboard running at "
-        f"http://{HOST}:{PORT}"
+        f"http://{host}:{port}"
     )
 
     print(
