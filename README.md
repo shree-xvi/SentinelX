@@ -1,276 +1,124 @@
-
 # SentinelX 🔐
 
-**A Python-based authentication security monitoring and detection system.**
+**Multi-tenant insider-threat detection SaaS platform** — FastAPI backend, React dashboard, and endpoint agent.
 
-SentinelX analyzes authentication logs, detects suspicious login activity, assigns risk scores to security alerts, and supports investigation through a local web dashboard.
-
-## Features
-
-### Detection Engine
-- Parses authentication logs and extracts timestamps, usernames, source IP addresses, and login outcomes.
-- Detects potential brute-force login attempts.
-- Identifies suspicious login activity.
-- Detects multi-account login patterns.
-- Uses configurable detection thresholds and time windows.
-- Assigns risk scores and severity levels to alerts.
-
-### Alert Management
-- Stores detected alerts in JSON format.
-- Prevents duplicate alerts within the configured deduplication window.
-- Generates alert summaries and reports.
-- Supports IP-based alert investigation.
-
-### Live Monitoring
-- Monitors authentication logs for newly appended entries.
-- Handles incomplete log lines until they are complete.
-- Detects log truncation and file replacement.
-- Maintains a configurable limit on recent events.
-- Publishes monitoring status for the dashboard.
-
-### Security Dashboard
-- Provides a local web interface for reviewing alerts.
-- Displays alert risk information and monitoring status.
-- Supports investigation statuses: New, Investigating, and Resolved.
-- Allows investigators to add notes.
-- Maintains an investigation history and audit trail.
-
-### Configuration
-- Loads settings from `config/sentinelx.json`.
-- Supports configurable brute-force thresholds and time windows.
-- Configures monitoring intervals and event retention.
-- Configures dashboard host, port, and heartbeat timeout.
-- Validates configuration values and falls back to defaults when necessary.
-
-### Testing
-- Automated unit and integration tests.
-- Configuration validation and fallback tests.
-- Detection and monitoring integration tests.
-- Dashboard configuration and heartbeat tests.
-
-**Current test status: 110 tests passing.**
+SentinelX ingests endpoint/security events, evaluates them against a policy-aware detection engine (brute force, impossible travel, after-hours access, data exfiltration, USB, shadow IT, and more), and surfaces risk-scored alerts, cases, reports, SIEM forwarding, and notifications through a JWT-secured React dashboard.
 
 ## Project Structure
 
 ```text
 SentinelX/
+├── backend/                 # FastAPI SaaS API (multi-tenant, JWT auth, detection engine)
+│   ├── app/
+│   │   ├── api/             # Route handlers (auth, alerts, cases, employees, policies, dashboard, notifications, siem, reports, sso, events, tenants)
+│   │   ├── detection/       # Policy-aware detection engine + risk scoring
+│   │   ├── models/          # SQLAlchemy models (Tenant, User, Alert, Case, Employee, Policy, ...)
+│   │   ├── schemas/         # Pydantic request/response schemas
+│   │   ├── services/        # Notification, SIEM, report, OIDC, alert services
+│   │   ├── middleware.py    # Rate limiting + security headers
+│   │   └── main.py          # App entrypoint
+│   ├── scripts/
+│   │   └── migrate_legacy_alerts.py   # One-off import of legacy Logs/alerts.json
+│   ├── tests/               # Backend test suite (pytest)
+│   └── requirements.txt
+├── frontend/                # React + TypeScript operations dashboard (Vite)
+│   └── src/
+│       ├── api/             # Typed API client
+│       ├── auth/            # Auth context + session handling
+│       ├── components/      # Layout, charts, UI primitives
+│       ├── pages/           # Overview, Alerts, Cases, Employees, Policies, Integrations, Reports, Login
+│       └── test/            # Frontend test suite (Vitest)
+├── agent/                   # Endpoint event collector + shipper
 ├── Logs/
-│   ├── auth.log
-│   ├── alerts.json
-│   └── alert_investigations.json
-├── config/
-│   └── sentinelx.json
-├── src/
-│   ├── collectors/
-│   ├── config/
-│   │   ├── config_loader.py
-│   │   ├── test_config_loader.py
-│   │   ├── test_config_integration.py
-│   │   ├── test_monitor_integration.py
-│   │   └── test_dashboard_integration.py
-│   ├── dashboard/
-│   │   ├── app.py
-│   │   ├── status.json
-│   │   ├── templates/
-│   │   │   └── index.html
-│   │   └── static/
-│   │       ├── style.css
-│   │       └── dashboard.js
-│   ├── detection/
-│   │   ├── brute_force.py
-│   │   ├── suspicious_login.py
-│   │   ├── multi_account.py
-│   │   ├── engine.py
-│   │   └── risk_score.py
-│   ├── parsers/
-│   │   └── auth_log_parser.py
-│   ├── utils/
-│   │   ├── alert_storage.py
-│   │   └── alert_report.py
-│   └── main.py
-├── .gitignore
-├── README.md
-└── requirements.txt
+│   ├── alerts.json          # Legacy alert seed data (used by the migration script/test)
+│   └── auth.log             # Sample auth log for the agent collector
+├── docker-compose.yml       # Postgres + Redis + backend stack
+└── README.md
 ```
-
-*The tree highlights the main components; additional test files are present throughout `src/`.*
 
 ## Requirements
 
-- Python 3.12 or a compatible Python version.
-- Git.
-- A modern web browser for the dashboard.
-
-The dashboard uses Python's built-in HTTP server. No separate web framework is required for it.
+- Python 3.12+ (`backend/`, `agent/`)
+- Node.js 18+ (`frontend/`)
+- Postgres 16 + Redis 7 for the full stack (SQLite works for local dev/tests)
 
 ## Setup
 
-### 1. Clone the repository
-
-```bash
-git clone https://github.com/shree-xvi/SentinelX.git
-cd SentinelX
-```
-
-### 2. Create a virtual environment
-
-**Windows PowerShell:**
+### 1. Backend
 
 ```powershell
 python -m venv venv
 .\venv\Scripts\Activate.ps1
+pip install -r backend/requirements.txt
+uvicorn backend.app.main:app --reload
 ```
 
-### 3. Install dependencies
+API base: `http://127.0.0.1:8000/api/v1` (docs at `/docs`).
+
+### 2. Frontend
 
 ```powershell
-python -m pip install -r requirements.txt
+cd frontend
+npm install
+npm run dev
 ```
 
-## Usage
+Dashboard: `http://localhost:5173`. Set `VITE_API_BASE_URL` if the API isn't on the default.
 
-Run commands from the project root with the virtual environment activated.
-
-### Run a one-time scan
+### 3. Full stack (Docker)
 
 ```powershell
-python src/main.py
+docker compose up --build
 ```
 
-Parses the configured authentication log, runs detection rules, and saves new alerts.
-
-### Start live monitoring
+### 4. Agent
 
 ```powershell
-python src/main.py --watch
+pip install -r agent/requirements.txt
+python -m agent.agent
 ```
-
-Monitors the authentication log for new events. Press `Ctrl+C` to stop monitoring.
-
-### Generate an alert report
-
-```powershell
-python src/main.py --report
-```
-
-Displays a summary of saved alerts.
-
-### Investigate an IP address
-
-```powershell
-python src/main.py --investigate 192.168.1.20
-```
-
-Replace the example IP address with the IPv4 address you want to investigate.
-
-### Launch the dashboard
-
-Open a **second PowerShell terminal** from the project root and activate the virtual environment if necessary.
-
-```powershell
-.\venv\Scripts\Activate.ps1
-python src/dashboard/app.py
-```
-
-Open the dashboard in your browser:
-
-http://127.0.0.1:8080
-
-The default dashboard binds to the local machine. Keep the dashboard and monitoring process running in their respective terminals when using them together.
 
 ## Configuration
 
-SentinelX reads its settings from `config/sentinelx.json`.
-
-Example configuration:
-
-```json
-{
-    "detection": {
-        "brute_force": {
-            "threshold": 5,
-            "window_minutes": 5
-        }
-    },
-    "risk": {
-        "medium_threshold": 30,
-        "high_threshold": 60,
-        "critical_threshold": 80
-    },
-    "monitor": {
-        "poll_seconds": 1,
-        "max_watch_events": 1000
-    },
-    "dashboard": {
-        "host": "127.0.0.1",
-        "port": 8080,
-        "heartbeat_timeout_seconds": 10
-    }
-}
-```
+The backend is configured via environment variables (see `backend/app/config.py`):
 
 | Setting | Default | Purpose |
 |---|---:|---|
-| `detection.brute_force.threshold` | `5` | Failed attempts required to trigger brute-force detection |
-| `detection.brute_force.window_minutes` | `5` | Detection time window in minutes |
-| `risk.medium_threshold` | `30` | Minimum score for MEDIUM risk |
-| `risk.high_threshold` | `60` | Minimum score for HIGH risk |
-| `risk.critical_threshold` | `80` | Minimum score for CRITICAL risk |
-| `monitor.poll_seconds` | `1` | Watch-mode polling interval in seconds |
-| `monitor.max_watch_events` | `1000` | Maximum recent events retained in memory |
-| `dashboard.host` | `127.0.0.1` | Dashboard server bind address |
-| `dashboard.port` | `8080` | Dashboard server port |
-| `dashboard.heartbeat_timeout_seconds` | `10` | Time after which a stale monitoring heartbeat is considered expired |
-
-The configuration loader validates supported values and uses defaults for missing or invalid settings. The dashboard host and port determine where the local dashboard server listens.
-
-## Detection Logic
-
-SentinelX currently includes brute-force detection, suspicious-login detection, and multi-account detection.
-
-The brute-force rule flags a potential attack when the configured number of failed login attempts occurs within the configured time window. Its default is five failed attempts within five minutes.
-
-Risk scores and severity levels help prioritize alerts. These signals support investigation; they do not independently establish that an account has been compromised.
-
-## Alert Storage and Investigation
-
-Generated data is stored locally:
-
-- `Logs/alerts.json` — detected security alerts.
-- `Logs/alert_investigations.json` — investigation statuses, notes, and history.
-- `src/dashboard/status.json` — monitoring status consumed by the dashboard.
-
-These files contain generated runtime data rather than source code. Ensure the relevant runtime files are excluded from version control as appropriate.
+| `DATABASE_URL` | `sqlite:///./sentinelx.db` | SQLAlchemy database URL |
+| `SECRET_KEY` | dev-only placeholder | JWT signing key — **must** be overridden in production |
+| `ENVIRONMENT` | `development` | `development` / `testing` / `production` |
+| `CORS_ORIGINS` | `*` | Comma-separated trusted origins |
+| `ENABLE_RATE_LIMIT` | `True` | Per-client rate limiting middleware |
+| `ENABLE_SECURITY_HEADERS` | `True` | Strict security headers |
+| `SSO_ENABLED` | `False` | Enable OIDC single sign-on (`OIDC_ISSUER`, `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET`, `OIDC_REDIRECT_URI`) |
 
 ## Run Tests
 
-Run the complete unit and integration test suite from the project root:
+Backend (from the project root):
 
 ```powershell
-python -m unittest discover -s src -p "test_*.py" -v
+python -m pytest backend/tests -q
 ```
 
-The latest recorded test result is **110 tests passing**. Run the command again after changes to verify the current state.
+Frontend (from `frontend/`):
 
-## Limitations
+```powershell
+npm test
+```
 
-- SentinelX is an educational security-monitoring prototype, not a replacement for a production SIEM.
-- Detection quality depends on the available log formats and detection rules.
-- Sample authentication logs are used for demonstration.
-- The dashboard is designed for local use and does not provide production-grade authentication or access control.
-- Alerts should be reviewed and validated before taking security action.
+## Legacy migration
+
+To import the legacy `Logs/alerts.json` seed data into a database tenant:
+
+```powershell
+python -m backend.scripts.migrate_legacy_alerts
+```
+
+Covered by `backend/tests/test_migration.py` — keep `Logs/alerts.json` in version control so the test stays green.
 
 ## Disclaimer
 
 SentinelX is an educational cybersecurity project. Use it only with systems and logs you are authorized to access. Detection results should be reviewed before taking security action.
-
-## Future Improvements
-
-- Support additional authentication log formats and data sources.
-- Expand detection rules and improve detection accuracy.
-- Add authenticated dashboard access and stronger deployment security.
-- Add automated testing for end-to-end monitoring and dashboard workflows.
-- Explore integration with external security monitoring systems.
 
 ## Author
 

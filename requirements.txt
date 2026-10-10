@@ -1,2 +1,0 @@
-# SentinelX currently uses only Python standard-library modules.
-# No third-party dependencies required.

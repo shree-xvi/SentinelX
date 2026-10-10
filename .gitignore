@@ -31,9 +31,9 @@ htmlcov/
 .nox/
 
 # ==============================
-# Generated security alerts
+# Generated security alerts (runtime investigation state)
 # ==============================
-Logs/alerts.json
+Logs/alert_investigations.json
 
 # ==============================
 # IDE and editor settings
@@ -56,8 +56,18 @@ dist/
 *.egg-info/
 
 # ==============================
-# Temporary files
+# Frontend (React dashboard)
+# ==============================
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+
+# ==============================
+# Temporary files and databases
 # ==============================
 *.log.tmp
 *.tmp
 *.bak
+*.db
+*.sqlite3
+*.sqlite
